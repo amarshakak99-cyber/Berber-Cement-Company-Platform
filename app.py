@@ -2,10 +2,6 @@
 Berber Cement Plant - AI-Powered Kiln Fuel Optimization Platform
 Inspired by Google Cloud Gen AI Hackathon 2025 Solution
 """
-
-import dash
-from dash import dcc, html, Input, Output, State, callback_context
-import dash_bootstrap_components as dbc
 from datetime import datetime, timedelta
 import hashlib
 import base64
