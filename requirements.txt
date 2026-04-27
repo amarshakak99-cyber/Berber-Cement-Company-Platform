@@ -1,5 +1,7 @@
 streamlit==1.39.0
 pandas==2.2.3
-pillow
-openpyxl
+numpy
 plotly
+openpyxl
+streamlit-option-menu
+pillow
