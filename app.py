@@ -1,426 +1,699 @@
+import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime
-import plotly.graph_objects as go
+from pathlib import Path
+from openpyxl import load_workbook
 import plotly.express as px
-from dash import Dash, dcc, html, Input, Output
-import dash_bootstrap_components as dbc
+from streamlit_option_menu import option_menu
+from PIL import Image
+from datetime import datetime
 
-# Initialize the Dash app
-app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+# ------------------------------
+# CONFIGURATION
+# ------------------------------
+st.set_page_config(page_title="Berber Cement KPI Dashboard", layout="wide", page_icon="🏭")
 
-# Define color scheme
-colors = {
-    'primary': '#1F4E79',
-    'secondary': '#2E75B6',
-    'success': '#28A745',
-    'warning': '#FFC107',
-    'danger': '#DC3545',
-    'info': '#17A2B8',
-    'light': '#F8F9FA',
-    'dark': '#343A40'
-}
+# Note: Update this path for deployment or make it configurable
+DATA_FOLDER = Path(r"C:\Users\amar.sirajeldin\Desktop\Plant parameters")
+MAIN_KPI_FILE = DATA_FOLDER / "Berber_Cement_KPIs_Dashboard.xlsx"
+VRM_ADVANCED_FILE = DATA_FOLDER / "berber_vrm_ml_worksheet_advanced.xlsx"
+KILN_ML_FILE = DATA_FOLDER / "kiln_ml_worksheet_example.xlsx"
+VRM_ML_FILE = DATA_FOLDER / "vrm_ml_worksheet_example.xlsx"
+LOGO_PATH = DATA_FOLDER / "Logo.jpg"
 
-# Define all KPIs for each department
-KPI_DATA = {
-    'Production': {
-        'Clinker Production (tons/day)': {'target': 5000, 'actual': 4850, 'unit': 'tons/day', 'lower_better': False},
-        'Cement Production (tons/day)': {'target': 6000, 'actual': 6100, 'unit': 'tons/day', 'lower_better': False},
-        'Kiln Feed Rate (tph)': {'target': 400, 'actual': 395, 'unit': 'tph', 'lower_better': False},
-        'Specific Heat Consumption (kcal/kg)': {'target': 720, 'actual': 730, 'unit': 'kcal/kg', 'lower_better': True},
-        'Specific Power Consumption (kWh/ton)': {'target': 85, 'actual': 87, 'unit': 'kWh/ton', 'lower_better': True},
-        'Kiln Availability (%)': {'target': 92, 'actual': 91, 'unit': '%', 'lower_better': False},
-        'Mill Availability (%)': {'target': 90, 'actual': 88, 'unit': '%', 'lower_better': False},
-        'Production Efficiency (%)': {'target': 95, 'actual': 93, 'unit': '%', 'lower_better': False},
-        'OEE (%)': {'target': 85, 'actual': 83, 'unit': '%', 'lower_better': False},
-        'Packing Plant Throughput (bags/hour)': {'target': 2400, 'actual': 2350, 'unit': 'bags/hour', 'lower_better': False},
-        'Despatch Volume (tons/day)': {'target': 5800, 'actual': 5900, 'unit': 'tons/day', 'lower_better': False},
-        'Inventory Turnover Ratio': {'target': 8, 'actual': 7.5, 'unit': 'ratio', 'lower_better': False}
-    },
-    'Maintenance - Mechanical': {
-        'MTBF (hours)': {'target': 720, 'actual': 680, 'unit': 'hours', 'lower_better': False},
-        'MTTR (hours)': {'target': 4, 'actual': 4.5, 'unit': 'hours', 'lower_better': True},
-        'Preventive Maintenance Compliance (%)': {'target': 95, 'actual': 92, 'unit': '%', 'lower_better': False},
-        'Equipment Reliability (%)': {'target': 98, 'actual': 96, 'unit': '%', 'lower_better': False},
-        'Spare Parts Availability (%)': {'target': 90, 'actual': 85, 'unit': '%', 'lower_better': False},
-        'Vibration Levels (mm/s)': {'target': 4.5, 'actual': 5.2, 'unit': 'mm/s', 'lower_better': True},
-        'Lubrication Compliance (%)': {'target': 98, 'actual': 95, 'unit': '%', 'lower_better': False}
-    },
-    'Maintenance - Electrical': {
-        'Power Factor': {'target': 0.95, 'actual': 0.92, 'unit': 'PF', 'lower_better': False},
-        'Voltage Stability Index (%)': {'target': 98, 'actual': 95, 'unit': '%', 'lower_better': False},
-        'Motor Efficiency (%)': {'target': 94, 'actual': 92, 'unit': '%', 'lower_better': False},
-        'Transformer Loading (%)': {'target': 85, 'actual': 88, 'unit': '%', 'lower_better': True},
-        'UPS Availability (%)': {'target': 99.5, 'actual': 99, 'unit': '%', 'lower_better': False},
-        'Electrical Downtime (hours)': {'target': 20, 'actual': 25, 'unit': 'hours', 'lower_better': True},
-        'Cable Insulation Resistance (MΩ)': {'target': 100, 'actual': 95, 'unit': 'MΩ', 'lower_better': False}
-    },
-    'Maintenance - DCS & Instrument': {
-        'Control System Availability (%)': {'target': 99.5, 'actual': 99.2, 'unit': '%', 'lower_better': False},
-        'Sensor Calibration Accuracy (%)': {'target': 98, 'actual': 97, 'unit': '%', 'lower_better': False},
-        'Data Acquisition Rate (%)': {'target': 99, 'actual': 98.5, 'unit': '%', 'lower_better': False},
-        'Loop Performance Index (%)': {'target': 95, 'actual': 93, 'unit': '%', 'lower_better': False},
-        'Alarm Management Score (%)': {'target': 90, 'actual': 87, 'unit': '%', 'lower_better': False},
-        'Network Uptime (%)': {'target': 99.9, 'actual': 99.8, 'unit': '%', 'lower_better': False},
-        'Controller Health Index (%)': {'target': 98, 'actual': 96, 'unit': '%', 'lower_better': False}
-    },
-    'Maintenance - Heavy Equipment': {
-        'Excavator Availability (%)': {'target': 85, 'actual': 83, 'unit': '%', 'lower_better': False},
-        'Loader Availability (%)': {'target': 88, 'actual': 86, 'unit': '%', 'lower_better': False},
-        'Dump Truck Availability (%)': {'target': 82, 'actual': 80, 'unit': '%', 'lower_better': False},
-        'Fuel Efficiency (L/ton)': {'target': 0.85, 'actual': 0.90, 'unit': 'L/ton', 'lower_better': True},
-        'Tire Life (hours)': {'target': 2000, 'actual': 1850, 'unit': 'hours', 'lower_better': False},
-        'Hydraulic System Pressure (bar)': {'target': 250, 'actual': 245, 'unit': 'bar', 'lower_better': False},
-        'Equipment Utilization (%)': {'target': 75, 'actual': 72, 'unit': '%', 'lower_better': False}
-    },
-    'Utility - Civil': {
-        'Building Structural Health (%)': {'target': 95, 'actual': 93, 'unit': '%', 'lower_better': False},
-        'Road Condition Index (1-10)': {'target': 8, 'actual': 7.5, 'unit': '1-10', 'lower_better': False},
-        'Water Management Efficiency (%)': {'target': 90, 'actual': 88, 'unit': '%', 'lower_better': False},
-        'Waste Treatment Compliance (%)': {'target': 100, 'actual': 98, 'unit': '%', 'lower_better': False},
-        'Dust Suppression Efficiency (%)': {'target': 95, 'actual': 92, 'unit': '%', 'lower_better': False},
-        'Green Belt Coverage (%)': {'target': 30, 'actual': 28, 'unit': '%', 'lower_better': False},
-        'Infrastructure Maintenance Cost ($/m²)': {'target': 5, 'actual': 5.5, 'unit': '$/m²', 'lower_better': True}
-    },
-    'Utility - Industrial Services': {
-        'Compressed Air Quality (ppm)': {'target': 5, 'actual': 7, 'unit': 'ppm', 'lower_better': True},
-        'Water Treatment Efficiency (%)': {'target': 95, 'actual': 92, 'unit': '%', 'lower_better': False},
-        'Waste Heat Recovery (kW)': {'target': 5000, 'actual': 4800, 'unit': 'kW', 'lower_better': False},
-        'HVAC Efficiency (%)': {'target': 88, 'actual': 85, 'unit': '%', 'lower_better': False},
-        'Lighting Efficiency (lux/W)': {'target': 120, 'actual': 115, 'unit': 'lux/W', 'lower_better': False},
-        'Housekeeping Score (%)': {'target': 90, 'actual': 87, 'unit': '%', 'lower_better': False},
-        'Utility Cost per ton ($)': {'target': 3.5, 'actual': 3.8, 'unit': '$/ton', 'lower_better': True}
-    },
-    'HSE': {
-        'Lost Time Injury Frequency': {'target': 0.5, 'actual': 0.8, 'unit': 'per million hrs', 'lower_better': True},
-        'Total Recordable Cases': {'target': 2, 'actual': 3, 'unit': 'cases', 'lower_better': True},
-        'Safety Training Hours/Employee': {'target': 40, 'actual': 35, 'unit': 'hours', 'lower_better': False},
-        'Environmental Compliance Rate (%)': {'target': 100, 'actual': 98, 'unit': '%', 'lower_better': False},
-        'Air Quality Index (PM2.5)': {'target': 50, 'actual': 65, 'unit': 'µg/m³', 'lower_better': True},
-        'Noise Levels (dB)': {'target': 85, 'actual': 88, 'unit': 'dB', 'lower_better': True},
-        'PPE Compliance (%)': {'target': 100, 'actual': 97, 'unit': '%', 'lower_better': False}
-    },
-    'Power Generation': {
-        'Power Generation (MW)': {'target': 25, 'actual': 24, 'unit': 'MW', 'lower_better': False},
-        'WHR Generation (MW)': {'target': 8, 'actual': 7.5, 'unit': 'MW', 'lower_better': False},
-        'Grid Import (MW)': {'target': 15, 'actual': 16, 'unit': 'MW', 'lower_better': True},
-        'Specific Fuel Consumption (L/kWh)': {'target': 0.28, 'actual': 0.30, 'unit': 'L/kWh', 'lower_better': True},
-        'Generator Efficiency (%)': {'target': 92, 'actual': 90, 'unit': '%', 'lower_better': False},
-        'CO2 Emissions (tons/MWh)': {'target': 0.85, 'actual': 0.88, 'unit': 'tons/MWh', 'lower_better': True},
-        'Auxiliary Power Consumption (%)': {'target': 8, 'actual': 8.5, 'unit': '%', 'lower_better': True}
-    },
-    'Quality Control': {
-        'Cement Strength (MPa)': {'target': 42.5, 'actual': 42.0, 'unit': 'MPa', 'lower_better': False},
-        'Fineness (Blaine cm²/g)': {'target': 3200, 'actual': 3150, 'unit': 'cm²/g', 'lower_better': False},
-        'SO3 Content (%)': {'target': 2.8, 'actual': 2.9, 'unit': '%', 'lower_better': False},
-        'MgO Content (%)': {'target': 2.0, 'actual': 2.1, 'unit': '%', 'lower_better': True},
-        'Clinker Free Lime (%)': {'target': 1.2, 'actual': 1.3, 'unit': '%', 'lower_better': True},
-        'Sampling Frequency Compliance (%)': {'target': 100, 'actual': 98, 'unit': '%', 'lower_better': False},
-        'Lab Test Accuracy (%)': {'target': 99, 'actual': 98, 'unit': '%', 'lower_better': False}
-    },
-    'Quarry & Crusher': {
-        'Limestone Production (tons/day)': {'target': 10000, 'actual': 9800, 'unit': 'tons/day', 'lower_better': False},
-        'Crusher Throughput (tph)': {'target': 800, 'actual': 780, 'unit': 'tph', 'lower_better': False},
-        'Crusher Availability (%)': {'target': 90, 'actual': 88, 'unit': '%', 'lower_better': False},
-        'Blasting Efficiency (tons/kg)': {'target': 5.5, 'actual': 5.2, 'unit': 'tons/kg', 'lower_better': False},
-        'Material Size Distribution (mm)': {'target': 50, 'actual': 52, 'unit': 'mm', 'lower_better': True},
-        'Stockpile Inventory (tons)': {'target': 50000, 'actual': 48000, 'unit': 'tons', 'lower_better': False},
-        'Hauling Distance (km)': {'target': 2.5, 'actual': 2.7, 'unit': 'km', 'lower_better': True}
-    }
-}
+# ------------------------------
+# UTILITY FUNCTIONS
+# ------------------------------
+@st.cache_data
+def load_workbook_sheets(file_path):
+    """Load all sheets from an Excel file"""
+    if not file_path.exists():
+        st.error(f"File not found: {file_path}")
+        return {}
+    xl = pd.ExcelFile(file_path)
+    sheets = {}
+    for sheet in xl.sheet_names:
+        df = xl.parse(sheet, header=None)
+        sheets[sheet] = df
+    return sheets
 
-def calculate_department_score(dept_data):
-    """Calculate performance score for a department"""
-    scores = []
-    for kpi, data in dept_data.items():
-        target = data['target']
-        actual = data['actual']
-        lower_better = data.get('lower_better', False)
-        
-        if target > 0:
-            if lower_better:
-                score = max(0, min(100, (target / actual) * 100)) if actual > 0 else 0
-            else:
-                score = max(0, min(100, (actual / target) * 100))
-            scores.append(score)
+@st.cache_data
+def load_model_config(file_path, sheet_name="Model_Config"):
+    """Load model coefficients from Model_Config sheet"""
+    sheets = load_workbook_sheets(file_path)
+    if sheet_name not in sheets:
+        return {}
     
-    return np.mean(scores) if scores else 0
+    df = sheets[sheet_name]
+    config = {}
+    
+    for i, row in df.iterrows():
+        if len(row) >= 2 and pd.notna(row.iloc[0]) and pd.notna(row.iloc[1]):
+            param = str(row.iloc[0]).strip()
+            value = row.iloc[1]
+            # Try to convert to numeric if possible
+            try:
+                if isinstance(value, str):
+                    # Check if it's a number
+                    value = float(value) if value.replace('.', '').replace('-', '').isdigit() else value
+                config[param] = value
+            except:
+                config[param] = value
+    return config
 
-def create_kpi_table(dept_name, dept_data):
-    """Create an HTML table for KPIs"""
-    rows = []
-    for kpi, data in dept_data.items():
-        target = data['target']
-        actual = data['actual']
-        unit = data['unit']
-        lower_better = data.get('lower_better', False)
-        
-        # Calculate achievement
-        if lower_better:
-            achievement = (target / actual * 100) if actual > 0 else 0
-            on_track = actual <= target
+def parse_kpi_sheet(df):
+    """Improved parser that detects KPI table start reliably."""
+    start_row = None
+    for i, row in df.iterrows():
+        val_a = row.iloc[0] if len(row) > 0 else None
+        val_b = row.iloc[1] if len(row) > 1 else None
+        if val_a and isinstance(val_a, str):
+            if "Back to Home" in val_a or "📊" in val_a or "🏠" in val_a:
+                continue
+            try:
+                pd.to_numeric(val_b)
+                start_row = i
+                break
+            except:
+                pass
+    if start_row is None:
+        return pd.DataFrame()
+
+    end_row = min(start_row + 30, len(df))
+    table = df.iloc[start_row:end_row].copy()
+    table.columns = ["KPI", "Target", "Actual", "Unit", "E", "F", "G"][:len(table.columns)]
+    table = table[["KPI", "Target", "Actual", "Unit"]]
+
+    table = table.dropna(subset=["KPI"])
+    table = table[~table["KPI"].astype(str).str.contains("Back to Home|📊|🏠|Remarks", na=False)]
+    table = table[table["KPI"].astype(str).str.strip() != ""]
+
+    table["Target"] = pd.to_numeric(table["Target"], errors="coerce")
+    table["Actual"] = pd.to_numeric(table["Actual"], errors="coerce")
+    table = table.dropna(subset=["Target", "Actual"], how="all")
+    return table.reset_index(drop=True)
+
+def compute_status(kpi_name, target, actual):
+    if pd.isna(actual) or pd.isna(target):
+        return ""
+    lower_better_kw = [
+        "consumption", "cost", "downtime", "vibration", "leakage", "emissions",
+        "index", "time", "temperature", "loading", "content", "free lime",
+        "ratio", "distance", "moisture", "size", "cases", "noise", "response time",
+        "mttr", "scan time", "response time", "leakage", "wear life", "deviation",
+        "risk", "specific"
+    ]
+    is_lower_better = any(kw in kpi_name.lower() for kw in lower_better_kw)
+
+    if is_lower_better:
+        if actual <= target:
+            return "✅ On Track"
+        elif actual <= target * 1.05:
+            return "⚠️ Attention"
         else:
-            achievement = (actual / target * 100) if target > 0 else 0
-            on_track = actual >= target
-        
-        status_color = colors['success'] if on_track else colors['danger']
-        status_text = "✅ On Track" if on_track else "❌ Needs Improvement"
-        
-        row = html.Tr([
-            html.Td(kpi, style={'padding': '8px', 'border': '1px solid #ddd'}),
-            html.Td(f"{target:.2f}" if isinstance(target, float) else str(target), 
-                   style={'padding': '8px', 'border': '1px solid #ddd', 'text-align': 'center'}),
-            html.Td(f"{actual:.2f}" if isinstance(actual, float) else str(actual), 
-                   style={'padding': '8px', 'border': '1px solid #ddd', 'text-align': 'center'}),
-            html.Td(unit, style={'padding': '8px', 'border': '1px solid #ddd', 'text-align': 'center'}),
-            html.Td(f"{achievement:.1f}%", 
-                   style={'padding': '8px', 'border': '1px solid #ddd', 'text-align': 'center'}),
-            html.Td(status_text, 
-                   style={'padding': '8px', 'border': '1px solid #ddd', 'text-align': 'center', 'color': status_color})
-        ])
-        rows.append(row)
-    
-    table = html.Table([
-        html.Thead(html.Tr([
-            html.Th("KPI", style={'padding': '10px', 'background-color': colors['primary'], 'color': 'white'}),
-            html.Th("Target", style={'padding': '10px', 'background-color': colors['primary'], 'color': 'white'}),
-            html.Th("Actual", style={'padding': '10px', 'background-color': colors['primary'], 'color': 'white'}),
-            html.Th("Unit", style={'padding': '10px', 'background-color': colors['primary'], 'color': 'white'}),
-            html.Th("Achievement", style={'padding': '10px', 'background-color': colors['primary'], 'color': 'white'}),
-            html.Th("Status", style={'padding': '10px', 'background-color': colors['primary'], 'color': 'white'})
-        ])),
-        html.Tbody(rows)
-    ], style={'width': '100%', 'border-collapse': 'collapse', 'margin-top': '20px'})
-    
-    return table
+            return "❌ Critical"
+    else:
+        if actual >= target:
+            return "✅ On Track"
+        elif actual >= target * 0.95:
+            return "⚠️ Attention"
+        else:
+            return "❌ Critical"
 
-# Create navigation tabs
-tabs = []
-dept_list = list(KPI_DATA.keys())
+def save_actuals_to_excel(file_path, sheet_name, edited_df):
+    wb = load_workbook(file_path)
+    ws = wb[sheet_name]
 
-# Add Overall tab first
-tabs.append(dbc.Tab(label="📊 Overall Dashboard", tab_id="overall", children=[
-    html.Br(),
-    dbc.Row([
-        dbc.Col([
-            dbc.Card([
-                dbc.CardBody([
-                    html.H4("Overall Plant Performance", className="card-title"),
-                    html.H2(f"{np.mean([calculate_department_score(KPI_DATA[dept]) for dept in dept_list]):.1f}%", 
-                           style={'color': colors['primary'], 'font-size': '48px'}),
-                    html.P("Overall Performance Score", className="card-text")
-                ])
-            ], color="primary", inverse=True)
-        ], width=3),
-        dbc.Col([
-            dbc.Card([
-                dbc.CardBody([
-                    html.H4("Total KPIs Tracked", className="card-title"),
-                    html.H2(f"{sum(len(KPI_DATA[dept]) for dept in dept_list)}", 
-                           style={'color': colors['success'], 'font-size': '48px'}),
-                    html.P("Across All Departments", className="card-text")
-                ])
-            ], color="success", inverse=True)
-        ], width=3),
-        dbc.Col([
-            dbc.Card([
-                dbc.CardBody([
-                    html.H4("Departments", className="card-title"),
-                    html.H2(f"{len(dept_list)}", 
-                           style={'color': colors['warning'], 'font-size': '48px'}),
-                    html.P("Active Monitoring", className="card-text")
-                ])
-            ], color="warning", inverse=True)
-        ], width=3),
-        dbc.Col([
-            dbc.Card([
-                dbc.CardBody([
-                    html.H4("On-Track KPIs", className="card-title"),
-                    html.H2(f"{sum(1 for dept in dept_list for k,v in KPI_DATA[dept].items() if (v['actual'] >= v['target'] if not v.get('lower_better', False) else v['actual'] <= v['target']))}", 
-                           style={'color': colors['success'], 'font-size': '48px'}),
-                    html.P("Meeting or Exceeding Targets", className="card-text")
-                ])
-            ], color="info", inverse=True)
-        ], width=3)
-    ]),
-    html.Br(),
-    dbc.Row([
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader(html.H5("Department Performance Summary", style={'text-align': 'center'})),
-                dbc.CardBody([
-                    dcc.Graph(
-                        id='dept-performance-graph',
-                        figure=px.bar(
-                            x=dept_list,
-                            y=[calculate_department_score(KPI_DATA[dept]) for dept in dept_list],
-                            title="Department Performance Scores (%)",
-                            labels={'x': 'Department', 'y': 'Performance Score (%)'},
-                            color=[calculate_department_score(KPI_DATA[dept]) for dept in dept_list],
-                            color_continuous_scale='Viridis'
-                        ).update_layout(height=500, showlegend=False)
-                    )
-                ])
-            ])
-        ], width=12)
-    ]),
-    html.Br(),
-    dbc.Row([
-        dbc.Col([
-            dbc.Card([
-                dbc.CardHeader(html.H5("⚠️ Recent Alerts & Action Items", style={'color': colors['danger']})),
-                dbc.CardBody([
-                    html.Ul([
-                        html.Li("⚠️ Specific Heat Consumption above target - Production Dept", style={'margin': '10px 0'}),
-                        html.Li("⚠️ High vibration levels detected - Mechanical Section", style={'margin': '10px 0'}),
-                        html.Li("⚠️ LTIF rate exceeded target - HSE Department", style={'margin': '10px 0'}),
-                        html.Li("⚠️ Power factor below optimum - Electrical Section", style={'margin': '10px 0'}),
-                        html.Li("ℹ️ Crusher throughput below target - Quarry Section", style={'margin': '10px 0'})
-                    ], style={'font-size': '16px'})
-                ])
-            ])
-        ], width=12)
-    ])
-]))
+    start_row = None
+    for row in range(1, ws.max_row + 1):
+        cell_a = ws.cell(row=row, column=1).value
+        cell_b = ws.cell(row=row, column=2).value
+        if cell_a and isinstance(cell_a, str):
+            if "Back to Home" in cell_a or "📊" in cell_a:
+                continue
+            try:
+                float(cell_b)
+                start_row = row
+                break
+            except:
+                pass
+    if start_row is None:
+        return
 
-# Add department tabs
-for dept_name in dept_list:
-    dept_data = KPI_DATA[dept_name]
-    score = calculate_department_score(dept_data)
-    
-    # Determine color based on score
-    score_color = colors['success'] if score >= 80 else colors['warning'] if score >= 60 else colors['danger']
-    
-    tabs.append(dbc.Tab(label=dept_name[:20], tab_id=dept_name, children=[
-        html.Br(),
-        dbc.Row([
-            dbc.Col([
-                dbc.Card([
-                    dbc.CardHeader(html.H3(f"{dept_name} KPI Dashboard", style={'text-align': 'center', 'color': colors['primary']})),
-                    dbc.CardBody([
-                        # Score Cards
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Card([
-                                    dbc.CardBody([
-                                        html.H6("Department Performance", className="card-title"),
-                                        html.H2(f"{score:.1f}%", style={'color': score_color, 'font-size': '36px'}),
-                                        html.P("Overall Score", className="card-text")
-                                    ])
-                                ], color="light")
-                            ], width=3),
-                            dbc.Col([
-                                dbc.Card([
-                                    dbc.CardBody([
-                                        html.H6("KPIs Tracked", className="card-title"),
-                                        html.H2(f"{len(dept_data)}", style={'color': colors['primary'], 'font-size': '36px'}),
-                                        html.P("Active Metrics", className="card-text")
-                                    ])
-                                ], color="light")
-                            ], width=3),
-                            dbc.Col([
-                                dbc.Card([
-                                    dbc.CardBody([
-                                        html.H6("On-Track KPIs", className="card-title"),
-                                        html.H2(f"{sum(1 for k,v in dept_data.items() if (v['actual'] >= v['target'] if not v.get('lower_better', False) else v['actual'] <= v['target']))}", 
-                                               style={'color': colors['success'], 'font-size': '36px'}),
-                                        html.P("Meeting Target", className="card-text")
-                                    ])
-                                ], color="light")
-                            ], width=3),
-                            dbc.Col([
-                                dbc.Card([
-                                    dbc.CardBody([
-                                        html.H6("Critical KPIs", className="card-title"),
-                                        html.H2(f"{sum(1 for k,v in dept_data.items() if (v['actual'] < v['target'] * 0.9 if not v.get('lower_better', False) else v['actual'] > v['target'] * 1.1))}", 
-                                               style={'color': colors['danger'], 'font-size': '36px'}),
-                                        html.P("Need Attention", className="card-text")
-                                    ])
-                                ], color="light")
-                            ], width=3)
-                        ]),
-                        
-                        html.Br(),
-                        
-                        # Target vs Actual Bar Chart
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Card([
-                                    dbc.CardBody([
-                                        dcc.Graph(
-                                            figure=px.bar(
-                                                x=list(dept_data.keys()),
-                                                y=[[v['target'] for v in dept_data.values()], [v['actual'] for v in dept_data.values()]],
-                                                title="Target vs Actual Performance",
-                                                labels={'x': 'KPI', 'y': 'Value', 'value': 'Value', 'variable': 'Type'},
-                                                barmode='group'
-                                            ).update_layout(height=400, showlegend=True, xaxis={'tickangle': 45})
-                                        )
-                                    ])
-                                ])
-                            ], width=12)
-                        ]),
-                        
-                        html.Br(),
-                        
-                        # KPI Table
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Card([
-                                    dbc.CardHeader(html.H5("Detailed KPI Performance Table", style={'text-align': 'center'})),
-                                    dbc.CardBody([
-                                        create_kpi_table(dept_name, dept_data)
-                                    ])
-                                ])
-                            ], width=12)
-                        ])
-                    ])
-                ])
-            ], width=12)
-        ])
-    ]))
+    for i, actual in enumerate(edited_df["Actual"]):
+        ws.cell(row=start_row + i, column=3, value=actual)
 
-# App layout
-app.layout = html.Div([
-    # Header
-    html.Div([
-        html.H1("🏭 Berber Cement Plant - KPI Dashboard", 
-                style={'text-align': 'center', 'color': colors['primary'], 'padding': '20px', 'margin': '0'}),
-        html.P("Real-time Performance Monitoring Platform", 
-               style={'text-align': 'center', 'color': colors['secondary'], 'font-size': '18px', 'margin-bottom': '20px'})
-    ], style={'background-color': colors['light'], 'border-radius': '5px'}),
+    wb.save(file_path)
+
+# ------------------------------
+# KILN ML FUNCTIONS
+# ------------------------------
+def calculate_kiln_predictions(live_values, config):
+    """Calculate kiln predictions based on model coefficients"""
+    # Calculate deviations
+    o2_dev = abs(live_values.get('o2_percent', 0) - config.get('Target back-end O2 %', 2.2))
+    calciner_dev = abs(live_values.get('calciner_temp_c', 0) - config.get('Target calciner temp C', 880)) / 10
+    inlet_dev = abs(live_values.get('kiln_inlet_temp_c', 0) - config.get('Target kiln inlet temp C', 1050)) / 10
+    coal_feed_ratio = live_values.get('coal_tph', 0) / live_values.get('feed_tph', 1) if live_values.get('feed_tph', 0) > 0 else 0
+    ratio_dev = abs(coal_feed_ratio - config.get('Target coal/feed ratio', 0.108)) * 100
+    draft_dev = abs(live_values.get('draft_pa', 0) - config.get('Target draft Pa', -5200)) / 100
+    feed_delta = 0  # For live scoring, feed delta is 0 (single point)
+    sat_deficit = max(0, config.get('Target secondary air temp C', 1040) - live_values.get('sat_c', 0)) / 10
+    cooler_high = max(0, live_values.get('cooler_out_c', 0) - config.get('Target cooler outlet temp C', 165)) / 10
     
-    # Tabs
-    dbc.Tabs(tabs, active_tab="overall"),
-    
-    # Footer
-    html.Br(),
-    html.Hr(),
-    html.Footer(
-        html.P(f"Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Berber Cement Plant - KPI Dashboard v2.0",
-               style={'text-align': 'center', 'color': 'gray', 'font-size': '12px', 'padding': '20px'})
+    # Pred Free Lime (linear model)
+    pred_free_lime = (
+        config.get('FL intercept', 0.25) +
+        config.get('FL O2 dev', 0.18) * o2_dev +
+        config.get('FL calciner dev/10', 0.08) * calciner_dev +
+        config.get('FL inlet dev/10', 0.06) * inlet_dev +
+        config.get('FL ratio dev x100', 0.05) * ratio_dev +
+        config.get('FL draft dev/100', 0.03) * draft_dev +
+        config.get('FL feed delta/10', 0.04) * feed_delta +
+        config.get('FL SAT deficit/10', 0.06) * sat_deficit
     )
-], style={'padding': '20px', 'font-family': 'Arial, sans-serif', 'background-color': '#f8f9fa'})
-
-# Run the app
-if __name__ == '__main__':
-    print("="*80)
-    print("🏭 BERBER CEMENT PLANT - KPI DASHBOARD")
-    print("="*80)
-    print("\n🚀 Starting Dashboard Server...")
-    print("📊 Dashboard includes:")
-    print(f"   • {len(KPI_DATA)} Department Dashboards")
-    print(f"   • {sum(len(KPI_DATA[dept]) for dept in KPI_DATA)} KPIs with real-time tracking")
-    print("   • Interactive visualizations")
-    print("   • Performance scoring system")
-    print("\n🌐 Access the dashboard at: http://127.0.0.1:8050")
-    print("📱 Dashboard is responsive and works on desktop & tablet")
-    print("\n💡 Features:")
-    print("   • Department performance scores")
-    print("   • Target vs actual comparisons")
-    print("   • Color-coded status indicators")
-    print("   • Automatic calculations")
-    print("\n⚠️ Press Ctrl+C to stop the server")
-    print("="*80)
     
-    app.run_server(debug=True, port=8050)
+    # Ring Risk Probability (logistic model)
+    logit = (
+        config.get('Ring intercept', -4) +
+        config.get('Ring O2 dev', 0.9) * o2_dev +
+        config.get('Ring draft dev/100', 0.55) * draft_dev +
+        config.get('Ring SAT deficit/10', 0.45) * sat_deficit +
+        config.get('Ring cooler high/10', 0.35) * cooler_high +
+        config.get('Ring feed delta/10', 0.5) * feed_delta
+    )
+    ring_risk = 1 / (1 + np.exp(-logit))
+    
+    # Stability Score
+    stability_score = max(0, 100 - (
+        config.get('Stab O2 weight', 6) * o2_dev +
+        config.get('Stab calciner weight', 4) * calciner_dev +
+        config.get('Stab inlet weight', 4) * inlet_dev +
+        config.get('Stab draft weight', 3) * draft_dev +
+        config.get('Stab feed delta weight', 5) * feed_delta +
+        config.get('Stab SAT deficit weight', 4) * sat_deficit
+    ))
+    
+    return {
+        'o2_deviation': o2_dev,
+        'calciner_dev_10': calciner_dev,
+        'inlet_dev_10': inlet_dev,
+        'coal_feed_ratio': coal_feed_ratio,
+        'ratio_dev_x100': ratio_dev,
+        'draft_dev_100': draft_dev,
+        'sat_deficit_10': sat_deficit,
+        'cooler_high_10': cooler_high,
+        'pred_free_lime': pred_free_lime,
+        'ring_risk_probability': ring_risk,
+        'stability_score': stability_score
+    }
+
+def render_kiln_ml():
+    st.header("🔥 Kiln ML Scorer - Advanced Analytics")
+    
+    if not KILN_ML_FILE.exists():
+        st.error(f"Kiln ML file not found at: {KILN_ML_FILE}")
+        return
+    
+    # Load model configuration
+    config = load_model_config(KILN_ML_FILE, "Model_Config")
+    if not config:
+        st.error("Could not load model configuration from Kiln ML file")
+        return
+    
+    st.markdown("### Live Kiln Parameters")
+    st.markdown("*Enter current kiln operating parameters for real-time predictions*")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        feed_tph = st.number_input("Kiln Feed (tph)", value=317.5, step=5.0, format="%.1f", key="kiln_feed")
+        calciner_temp = st.number_input("Calciner Temperature (°C)", value=873.4, step=5.0, format="%.1f", key="kiln_calciner")
+        inlet_temp = st.number_input("Kiln Inlet Temperature (°C)", value=1041.5, step=5.0, format="%.1f", key="kiln_inlet")
+        o2_percent = st.number_input("Back-end O₂ (%)", value=1.99, step=0.1, format="%.2f", key="kiln_o2")
+    
+    with col2:
+        sat_temp = st.number_input("Secondary Air Temperature (°C)", value=1049.8, step=5.0, format="%.1f", key="kiln_sat")
+        cooler_out = st.number_input("Cooler Outlet Temperature (°C)", value=156.3, step=5.0, format="%.1f", key="kiln_cooler")
+        coal_tph = st.number_input("Coal Feed (tph)", value=34.3, step=1.0, format="%.1f", key="kiln_coal")
+        draft_pa = st.number_input("Draft Pressure (Pa)", value=-5291, step=50, format="%.0f", key="kiln_draft")
+    
+    live_values = {
+        'feed_tph': feed_tph,
+        'calciner_temp_c': calciner_temp,
+        'kiln_inlet_temp_c': inlet_temp,
+        'o2_percent': o2_percent,
+        'sat_c': sat_temp,
+        'cooler_out_c': cooler_out,
+        'coal_tph': coal_tph,
+        'draft_pa': draft_pa
+    }
+    
+    # Calculate predictions
+    predictions = calculate_kiln_predictions(live_values, config)
+    
+    st.markdown("---")
+    st.markdown("### ML Model Predictions")
+    
+    # Display predictions in metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "Predicted Free Lime (%)",
+            f"{predictions['pred_free_lime']:.2f}",
+            delta=f"Target: {config.get('Target free lime %', 1.2)}%",
+            delta_color="inverse"
+        )
+        st.metric(
+            "Ring Risk Probability",
+            f"{predictions['ring_risk_probability']:.1%}",
+            delta=f"Threshold: {config.get('Ring risk threshold', 0.7):.0%}",
+            delta_color="inverse"
+        )
+    
+    with col2:
+        st.metric(
+            "Stability Score",
+            f"{predictions['stability_score']:.0f}",
+            delta=f"Floor: {config.get('Stability score floor', 80)}",
+            delta_color="inverse"
+        )
+        
+        # Determine overall status
+        if predictions['ring_risk_probability'] >= config.get('Ring risk threshold', 0.7):
+            status = "🔴 HIGH RING RISK"
+            status_color = "red"
+        elif predictions['pred_free_lime'] >= config.get('Pred free lime threshold', 1.8):
+            status = "🟠 QUALITY RISK"
+            status_color = "orange"
+        elif predictions['stability_score'] < config.get('Stability score floor', 80):
+            status = "🟡 CAUTION"
+            status_color = "yellow"
+        else:
+            status = "🟢 NORMAL"
+            status_color = "green"
+        
+        st.markdown(f"**Overall Status:** <span style='color:{status_color}'>{status}</span>", unsafe_allow_html=True)
+    
+    with col3:
+        st.metric("O₂ Deviation", f"{predictions['o2_deviation']:.2f}%")
+        st.metric("Coal/Feed Ratio", f"{predictions['coal_feed_ratio']:.3f}")
+    
+    # Detailed metrics expander
+    with st.expander("📊 Detailed Deviation Metrics"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Calciner Deviation/10", f"{predictions['calciner_dev_10']:.2f}")
+            st.metric("Inlet Deviation/10", f"{predictions['inlet_dev_10']:.2f}")
+        with col2:
+            st.metric("Ratio Deviation x100", f"{predictions['ratio_dev_x100']:.2f}")
+            st.metric("Draft Deviation/100", f"{predictions['draft_dev_100']:.2f}")
+        with col3:
+            st.metric("SAT Deficit/10", f"{predictions['sat_deficit_10']:.2f}")
+            st.metric("Cooler High/10", f"{predictions['cooler_high_10']:.2f}")
+    
+    # Suggested actions
+    st.markdown("---")
+    st.markdown("### 💡 Suggested Actions")
+    
+    if status == "🔴 HIGH RING RISK":
+        st.warning("⚠️ **HIGH RING RISK DETECTED**")
+        st.markdown("""
+        - Check draft stability and coating/ring tendency
+        - Monitor cooler performance and SAT temperature
+        - Review O₂ control and combustion conditions
+        - Consider reducing feed rate temporarily
+        - Schedule inspection for potential ring formation
+        """)
+    elif status == "🟠 QUALITY RISK":
+        st.info("📊 **QUALITY RISK DETECTED**")
+        st.markdown("""
+        - Review burning intensity and flame shape
+        - Adjust O₂ control and coal/feed ratio
+        - Check calciner temperature stability
+        - Monitor free lime trend closely
+        - Consider raw mix adjustment if persistent
+        """)
+    elif status == "🟡 CAUTION":
+        st.info("⚠️ **OPERATION CAUTION**")
+        st.markdown("""
+        - Monitor stability parameters closely
+        - Check for feed rate fluctuations
+        - Review draft and temperature trends
+        - Prepare for potential intervention if degradation continues
+        """)
+    else:
+        st.success("✅ **NORMAL OPERATION**")
+        st.markdown("Continue monitoring and maintain current operating parameters.")
+
+# ------------------------------
+# VRM ML FUNCTIONS
+# ------------------------------
+def calculate_vrm_predictions(live_values, config):
+    """Calculate VRM predictions based on model coefficients"""
+    # Calculate deviations
+    vibration_dev = abs(live_values.get('vibration', 0) - config.get('Target vibration mm/s', 1.6))
+    dp_dev = abs(live_values.get('mill_dp', 0) - config.get('Target mill DP mbar', 78)) / 10
+    temp_dev = abs(live_values.get('outlet_temp', 0) - config.get('Target outlet temp C', 86)) / 10
+    separator_dev = abs(live_values.get('separator_rpm', 0) - config.get('Target separator rpm', 930)) / 100
+    reject_dev = abs(live_values.get('reject_tph', 0) - config.get('Target reject tph', 14))
+    fan_dev = abs(live_values.get('fan_damper', 0) - config.get('Target fan damper %', 72)) / 10
+    feed_delta = 0  # For live scoring, feed delta is 0
+    
+    # Predicted Residue (linear model)
+    pred_residue = (
+        config.get('Residue intercept', 5.2) +
+        config.get('Coeff vibration dev', 0.95) * vibration_dev +
+        config.get('Coeff DP dev/10', 0.42) * dp_dev +
+        config.get('Coeff outlet temp dev/10', 0.28) * temp_dev +
+        config.get('Coeff reject dev', 0.18) * reject_dev +
+        config.get('Coeff fan dev/10', 0.11) * fan_dev +
+        config.get('Coeff feed delta/10', 0.16) * feed_delta +
+        config.get('Coeff separator dev/100', 0.24) * separator_dev
+    )
+    
+    # Trip Risk Probability (logistic model)
+    logit = (
+        config.get('Trip intercept', -4.1) +
+        config.get('Coeff trip vibration dev', 1.55) * vibration_dev +
+        config.get('Coeff trip reject dev', 0.12) * reject_dev +
+        config.get('Coeff trip feed delta/10', 0.48) * feed_delta +
+        config.get('Coeff trip DP dev/10', 0.65) * dp_dev +
+        config.get('Coeff trip fan dev/10', 0.2) * fan_dev
+    )
+    trip_risk = 1 / (1 + np.exp(-logit))
+    
+    # Stability Score
+    stability_score = max(0, 100 - (
+        config.get('Stability wt vibration dev', 18) * vibration_dev +
+        config.get('Stability wt DP dev/10', 8) * dp_dev +
+        config.get('Stability wt outlet temp dev/10', 6) * temp_dev +
+        config.get('Stability wt reject dev', 1.2) * reject_dev +
+        config.get('Stability wt fan dev/10', 3.5) * fan_dev +
+        config.get('Stability wt feed delta/10', 4) * feed_delta
+    ))
+    
+    return {
+        'vibration_deviation': vibration_dev,
+        'dp_dev_10': dp_dev,
+        'temp_dev_10': temp_dev,
+        'separator_dev_100': separator_dev,
+        'reject_deviation': reject_dev,
+        'fan_dev_10': fan_dev,
+        'pred_residue': pred_residue,
+        'trip_risk_probability': trip_risk,
+        'stability_score': stability_score
+    }
+
+def render_vrm_advanced():
+    st.header("📈 VRM Advanced ML Scorer")
+    
+    if not VRM_ML_FILE.exists():
+        st.error(f"VRM ML file not found at: {VRM_ML_FILE}")
+        return
+    
+    # Load model configuration
+    config = load_model_config(VRM_ML_FILE, "Model_Config")
+    if not config:
+        st.error("Could not load model configuration from VRM ML file")
+        return
+    
+    st.markdown("### Live VRM Parameters")
+    st.markdown("*Enter current VRM operating parameters for real-time predictions*")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        feed_tph = st.number_input("Feed (tph)", value=183.8, step=5.0, format="%.1f", key="vrm_feed")
+        mill_dp = st.number_input("Mill DP (mbar)", value=79.4, step=2.0, format="%.1f", key="vrm_dp")
+        outlet_temp = st.number_input("Outlet Temperature (°C)", value=84.9, step=1.0, format="%.1f", key="vrm_temp")
+        vibration = st.number_input("Vibration (mm/s)", value=1.72, step=0.1, format="%.2f", key="vrm_vibration")
+    
+    with col2:
+        separator_rpm = st.number_input("Separator Speed (rpm)", value=925, step=10, format="%.0f", key="vrm_separator")
+        reject_tph = st.number_input("Reject (tph)", value=15.2, step=1.0, format="%.1f", key="vrm_reject")
+        main_motor_kw = st.number_input("Main Motor Power (kW)", value=5090, step=50, format="%.0f", key="vrm_motor")
+        fan_damper = st.number_input("Fan Damper (%)", value=73.6, step=1.0, format="%.1f", key="vrm_fan")
+    
+    live_values = {
+        'feed_tph': feed_tph,
+        'mill_dp': mill_dp,
+        'outlet_temp': outlet_temp,
+        'vibration': vibration,
+        'separator_rpm': separator_rpm,
+        'reject_tph': reject_tph,
+        'main_motor_kw': main_motor_kw,
+        'fan_damper': fan_damper
+    }
+    
+    # Calculate predictions
+    predictions = calculate_vrm_predictions(live_values, config)
+    
+    st.markdown("---")
+    st.markdown("### ML Model Predictions")
+    
+    # Display predictions in metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "Predicted Residue (%)",
+            f"{predictions['pred_residue']:.1f}",
+            delta=f"Limit: {config.get('Residue prediction limit %', 12.5)}%",
+            delta_color="inverse"
+        )
+        st.metric(
+            "Trip Risk Probability",
+            f"{predictions['trip_risk_probability']:.1%}",
+            delta=f"Threshold: {config.get('Trip risk probability threshold', 0.65):.0%}",
+            delta_color="inverse"
+        )
+    
+    with col2:
+        st.metric(
+            "Stability Score",
+            f"{predictions['stability_score']:.0f}",
+            delta=f"Minimum: {config.get('Minimum stability score', 70)}",
+            delta_color="inverse"
+        )
+        
+        # Determine overall status
+        if predictions['trip_risk_probability'] >= config.get('Trip risk probability threshold', 0.65):
+            status = "🔴 HIGH TRIP RISK"
+            status_color = "red"
+        elif predictions['pred_residue'] >= config.get('Residue prediction limit %', 12.5):
+            status = "🟠 QUALITY RISK"
+            status_color = "orange"
+        elif predictions['stability_score'] < config.get('Minimum stability score', 70):
+            status = "🟡 CAUTION"
+            status_color = "yellow"
+        else:
+            status = "🟢 NORMAL"
+            status_color = "green"
+        
+        st.markdown(f"**Overall Status:** <span style='color:{status_color}'>{status}</span>", unsafe_allow_html=True)
+    
+    with col3:
+        st.metric("Vibration Deviation", f"{predictions['vibration_deviation']:.2f} mm/s")
+        st.metric("Reject Deviation", f"{predictions['reject_deviation']:.1f} tph")
+    
+    # Detailed metrics expander
+    with st.expander("📊 Detailed Deviation Metrics"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("DP Deviation/10", f"{predictions['dp_dev_10']:.2f}")
+            st.metric("Temperature Deviation/10", f"{predictions['temp_dev_10']:.2f}")
+        with col2:
+            st.metric("Separator Deviation/100", f"{predictions['separator_dev_100']:.2f}")
+            st.metric("Fan Damper Deviation/10", f"{predictions['fan_dev_10']:.2f}")
+        with col3:
+            specific_power = main_motor_kw / feed_tph if feed_tph > 0 else 0
+            st.metric("Specific Power", f"{specific_power:.1f} kWh/t")
+            st.metric("Target Specific Power", f"{config.get('Target specific power kWh/t', 27.5):.1f} kWh/t")
+    
+    # Suggested actions
+    st.markdown("---")
+    st.markdown("### 💡 Suggested Actions")
+    
+    if status == "🔴 HIGH TRIP RISK":
+        st.warning("⚠️ **HIGH TRIP RISK DETECTED**")
+        st.markdown("""
+        - Reduce feed rate fluctuations immediately
+        - Inspect vibration trend and source
+        - Check reject rate and circulating load
+        - Monitor mill DP for bed instability
+        - Consider reducing feed rate temporarily
+        """)
+    elif status == "🟠 QUALITY RISK":
+        st.info("📊 **QUALITY RISK DETECTED**")
+        st.markdown("""
+        - Review separator speed and classification efficiency
+        - Adjust grinding pressure and dam ring height
+        - Check circulating load and reject rate
+        - Monitor product fineness trend
+        - Consider mill ventilation adjustment
+        """)
+    elif status == "🟡 CAUTION":
+        st.info("⚠️ **OPERATION CAUTION**")
+        st.markdown("""
+        - Monitor stability parameters closely
+        - Watch for increasing vibration trend
+        - Check feed consistency
+        - Prepare for potential intervention if degradation continues
+        """)
+    else:
+        st.success("✅ **NORMAL OPERATION**")
+        st.markdown("Continue monitoring and maintain current operating parameters.")
+
+# ------------------------------
+# PAGE RENDERERS
+# ------------------------------
+def render_kpi_page(sheet_name, title, icon=""):
+    st.header(f"{icon} {title}")
+    sheets = load_workbook_sheets(MAIN_KPI_FILE)
+    if sheet_name not in sheets:
+        st.error(f"Sheet '{sheet_name}' not found.")
+        return
+
+    df_raw = sheets[sheet_name]
+    kpi_df = parse_kpi_sheet(df_raw)
+    if kpi_df.empty:
+        st.warning("No KPIs found in this sheet.")
+        return
+
+    kpi_df["Status"] = kpi_df.apply(
+        lambda r: compute_status(r["KPI"], r["Target"], r["Actual"]), axis=1
+    )
+
+    edited_df = st.data_editor(
+        kpi_df,
+        column_config={
+            "KPI": st.column_config.TextColumn(disabled=True),
+            "Target": st.column_config.NumberColumn(disabled=True, format="%.2f"),
+            "Actual": st.column_config.NumberColumn(format="%.2f"),
+            "Unit": st.column_config.TextColumn(disabled=True),
+            "Status": st.column_config.TextColumn(disabled=True),
+        },
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        key=f"editor_{sheet_name}"
+    )
+
+    edited_df["Status"] = edited_df.apply(
+        lambda r: compute_status(r["KPI"], r["Target"], r["Actual"]), axis=1
+    )
+
+    col1, col2, col3 = st.columns(3)
+    on_track = (edited_df["Status"] == "✅ On Track").sum()
+    attention = (edited_df["Status"] == "⚠️ Attention").sum()
+    critical = (edited_df["Status"] == "❌ Critical").sum()
+    col1.metric("✅ On Track", on_track)
+    col2.metric("⚠️ Attention", attention)
+    col3.metric("❌ Critical", critical)
+
+    chart_data = edited_df.dropna(subset=["Target", "Actual"]).copy()
+    if not chart_data.empty:
+        fig = px.bar(chart_data.melt(id_vars=["KPI"], value_vars=["Target", "Actual"]),
+                     x="KPI", y="value", color="variable", barmode="group",
+                     title="Target vs Actual", height=400)
+        st.plotly_chart(fig, use_container_width=True)
+
+    if st.button("💾 Save Changes to Excel", key=f"save_{sheet_name}"):
+        save_actuals_to_excel(MAIN_KPI_FILE, sheet_name, edited_df)
+        st.success("Saved successfully! Refresh to see updated data.")
+        st.cache_data.clear()
+
+def render_maintenance_subpages():
+    subpage = st.selectbox("Select Maintenance Section", 
+                           ["Mechanical", "Electrical", "DCS & Instrument", "Heavy Equipment"])
+    sheet_map = {
+        "Mechanical": "MAINTENANCE - MECHANICAL",
+        "Electrical": "MAINTENANCE - ELECTRICAL",
+        "DCS & Instrument": "MAINTENANCE - DCS & INSTRUMENT",
+        "Heavy Equipment": "MAINTENANCE - HEAVY EQUIPMENT"
+    }
+    render_kpi_page(sheet_map[subpage], f"Maintenance - {subpage}", "🔧")
+
+def render_utility_subpages():
+    subpage = st.selectbox("Select Utility Section", 
+                           ["Civil", "Industrial Services", "HSE"])
+    sheet_map = {
+        "Civil": "UTILITY - CIVIL",
+        "Industrial Services": "UTILITY - INDUSTRIAL SERVICES",
+        "HSE": "HSE"
+    }
+    render_kpi_page(sheet_map[subpage], f"Utility - {subpage}", "🔨")
+
+# ------------------------------
+# MAIN APP
+# ------------------------------
+def main():
+    # Sidebar with small centered logo
+    with st.sidebar:
+        if LOGO_PATH.exists():
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                logo = Image.open(LOGO_PATH)
+                st.image(logo, width=150)
+        else:
+            st.warning("Logo not found at: " + str(LOGO_PATH))
+        st.title("Berber Cement")
+        selected = option_menu(
+            menu_title="Navigation",
+            options=[
+                "Home",
+                "Production",
+                "Maintenance",
+                "Utility",
+                "Power Generation",
+                "Quality Control",
+                "Quarry & Crusher",
+                "VRM Advanced ML",
+                "Kiln ML"
+            ],
+            icons=["house", "speedometer2", "wrench", "tools", "lightning", "clipboard-check", "minecart", "graph-up", "fire"],
+            menu_icon="cast",
+            default_index=0,
+        )
+
+    # Page routing
+    if selected == "Home":
+        st.title("🏭 Berber Cement Plant KPI Dashboard")
+        st.markdown("### Welcome to the interactive KPI platform")
+        st.markdown("""
+        - **Navigate** using the sidebar menu.
+        - **Edit** actual values directly in the tables.
+        - **Save** changes to Excel with the button at the bottom.
+        - **Status colors**: ✅ On Track, ⚠️ Attention, ❌ Critical.
+        - **ML Models**: Use VRM and Kiln ML scorers for predictive analytics.
+        """)
+        st.info(f"Data folder: `{DATA_FOLDER}`")
+        st.caption(f"Last updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Production", "6,000 t/d", "Target")
+        col2.metric("Kiln Feed", "400 tph", "Target")
+        col3.metric("Sp. Heat", "720 kcal/kg", "Target")
+        col4.metric("OEE", "85%", "Target")
+
+    elif selected == "Production":
+        render_kpi_page("PRODUCTION", "Production Department", "🏭")
+    elif selected == "Maintenance":
+        render_maintenance_subpages()
+    elif selected == "Utility":
+        render_utility_subpages()
+    elif selected == "Power Generation":
+        render_kpi_page("POWER GENERATION", "Power Generation", "⚡")
+    elif selected == "Quality Control":
+        render_kpi_page("QUALITY CONTROL", "Quality Control", "🔬")
+    elif selected == "Quarry & Crusher":
+        render_kpi_page("QUARRY & CRUSHER", "Quarry & Crusher", "⛏️")
+    elif selected == "VRM Advanced ML":
+        render_vrm_advanced()
+    elif selected == "Kiln ML":
+        render_kiln_ml()
+
+if __name__ == "__main__":
+    main()
